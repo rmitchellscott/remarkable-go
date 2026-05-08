@@ -20,6 +20,9 @@ func Detect(fs filesystem.FS) (Type, error) {
 	if strings.Contains(model, "Chiappa") {
 		return RMPPMove, nil
 	}
+	if strings.Contains(model, "Tatsu") {
+		return RMPPure, nil
+	}
 
 	if strings.Contains(model, "reMarkable 2") {
 		return RM2, nil
