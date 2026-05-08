@@ -18,7 +18,7 @@ func Detect(fs filesystem.FS) (Type, error) {
 		return RMPP, nil
 	}
 	if strings.Contains(model, "Chiappa") {
-		return RMPPM, nil
+		return RMPPMove, nil
 	}
 
 	if strings.Contains(model, "reMarkable 2") {
