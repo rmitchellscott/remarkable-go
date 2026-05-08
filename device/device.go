@@ -6,7 +6,7 @@ const (
 	RM1     Type = "rm1"
 	RM2     Type = "rm2"
 	RMPP    Type = "rmpp"
-	RMPPM   Type = "rmppm"
+	RMPPMove Type = "rmppmove"
 	Unknown Type = "unknown"
 )
 
@@ -18,7 +18,7 @@ const (
 )
 
 func (t Type) IsPaperPro() bool {
-	return t == RMPP || t == RMPPM
+	return t == RMPP || t == RMPPMove
 }
 
 func (t Type) DisplayName() string {
@@ -29,7 +29,7 @@ func (t Type) DisplayName() string {
 		return "reMarkable 2"
 	case RMPP:
 		return "reMarkable Paper Pro"
-	case RMPPM:
+	case RMPPMove:
 		return "reMarkable Paper Pro Move"
 	default:
 		return string(t)
@@ -59,7 +59,7 @@ func TypeFromModel(model string) Type {
 	case "Ferrari":
 		return RMPP
 	case "Chiappa":
-		return RMPPM
+		return RMPPMove
 	default:
 		return Unknown
 	}

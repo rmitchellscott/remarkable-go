@@ -6,8 +6,8 @@ func TestType_IsPaperPro(t *testing.T) {
 	if !RMPP.IsPaperPro() {
 		t.Error("RMPP should be Paper Pro")
 	}
-	if !RMPPM.IsPaperPro() {
-		t.Error("RMPPM should be Paper Pro")
+	if !RMPPMove.IsPaperPro() {
+		t.Error("RMPPMove should be Paper Pro")
 	}
 	if RM1.IsPaperPro() {
 		t.Error("RM1 should not be Paper Pro")
@@ -25,7 +25,7 @@ func TestType_DisplayName(t *testing.T) {
 		{RM1, "reMarkable 1"},
 		{RM2, "reMarkable 2"},
 		{RMPP, "reMarkable Paper Pro"},
-		{RMPPM, "reMarkable Paper Pro Move"},
+		{RMPPMove, "reMarkable Paper Pro Move"},
 		{Unknown, "unknown"},
 	}
 
@@ -44,7 +44,7 @@ func TestTypeFromModel(t *testing.T) {
 		want  Type
 	}{
 		{"Ferrari", RMPP},
-		{"Chiappa", RMPPM},
+		{"Chiappa", RMPPMove},
 		{"SomethingElse", Unknown},
 		{"", Unknown},
 	}
