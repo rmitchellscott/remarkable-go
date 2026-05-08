@@ -7,7 +7,8 @@ const (
 	RM2     Type = "rm2"
 	RMPP    Type = "rmpp"
 	RMPPMove Type = "rmppmove"
-	Unknown Type = "unknown"
+	RMPPure Type = "rmppure"
+	Unknown  Type = "unknown"
 )
 
 type Architecture string
@@ -18,7 +19,7 @@ const (
 )
 
 func (t Type) IsPaperPro() bool {
-	return t == RMPP || t == RMPPMove
+	return t == RMPP || t == RMPPMove || t == RMPPure
 }
 
 func (t Type) DisplayName() string {
@@ -31,6 +32,8 @@ func (t Type) DisplayName() string {
 		return "reMarkable Paper Pro"
 	case RMPPMove:
 		return "reMarkable Paper Pro Move"
+	case RMPPure:
+		return "reMarkable Paper Pure"
 	default:
 		return string(t)
 	}
@@ -43,6 +46,7 @@ func (t Type) String() string {
 var paperProModels = []string{
 	"Ferrari",
 	"Chiappa",
+	"Tatsu",
 }
 
 func IsPaperProModel(model string) bool {
@@ -60,6 +64,8 @@ func TypeFromModel(model string) Type {
 		return RMPP
 	case "Chiappa":
 		return RMPPMove
+	case "Tatsu":
+		return RMPPure
 	default:
 		return Unknown
 	}
