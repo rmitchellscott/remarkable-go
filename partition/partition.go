@@ -1,7 +1,6 @@
 package partition
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -169,15 +168,11 @@ func (m *manager) SwitchBoot(ctx context.Context, partition int) (*SwitchResult,
 }
 
 func (m *manager) GetPartitionVersion(ctx context.Context, partition int) (string, error) {
-	if v, err := m.readVersionFromFile("/usr/share/remarkable/update.conf", "RELEASE_VERSION="); err == nil {
-		return v, nil
+	v, err := version.ReadFromFS(m.fs, "")
+	if err != nil {
+		return "", ErrVersionDetection
 	}
-
-	if v, err := m.readVersionFromFile("/etc/os-release", "IMG_VERSION="); err == nil {
-		return v, nil
-	}
-
-	return "", ErrVersionDetection
+	return v, nil
 }
 
 func (m *manager) IsEncryptionEnabled(ctx context.Context) (bool, error) {
@@ -408,34 +403,11 @@ func (m *manager) getVersionFromMountedPartition(ctx context.Context, partNum in
 		return "", err
 	}
 
-	if v, err := m.readVersionFromFile(mountPoint+"/usr/share/remarkable/update.conf", "RELEASE_VERSION="); err == nil {
-		return v, nil
-	}
-
-	if v, err := m.readVersionFromFile(mountPoint+"/etc/os-release", "IMG_VERSION="); err == nil {
-		return v, nil
-	}
-
-	return "unknown", nil
-}
-
-func (m *manager) readVersionFromFile(path, prefix string) (string, error) {
-	data, err := m.fs.ReadFile(path)
+	v, err := version.ReadFromFS(m.fs, mountPoint)
 	if err != nil {
-		return "", err
+		return "unknown", nil
 	}
-
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	for scanner.Scan() {
-		line := scanner.Text()
-		if idx := strings.Index(line, prefix); idx != -1 {
-			v := line[idx+len(prefix):]
-			v = strings.Trim(v, `"`)
-			return v, nil
-		}
-	}
-
-	return "", fmt.Errorf("%s not found in %s", prefix, path)
+	return v, nil
 }
 
 func parsePartitionNumber(device string) (int, error) {

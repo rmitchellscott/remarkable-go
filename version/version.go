@@ -1,8 +1,12 @@
 package version
 
 import (
+	"bufio"
+	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/rmitchellscott/remarkable-go/filesystem"
 )
 
 type Version string
@@ -57,4 +61,29 @@ func Compare(v1, v2 string) int {
 
 func Parse(s string) Version {
 	return Version(s)
+}
+
+var versionFiles = []struct {
+	path   string
+	prefix string
+}{
+	{"/usr/share/remarkable/update.conf", "RELEASE_VERSION="},
+	{"/etc/os-release", "IMG_VERSION="},
+}
+
+func ReadFromFS(fs filesystem.FS, root string) (string, error) {
+	for _, vf := range versionFiles {
+		data, err := fs.ReadFile(root + vf.path)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(strings.NewReader(string(data)))
+		for scanner.Scan() {
+			line := scanner.Text()
+			if idx := strings.Index(line, vf.prefix); idx != -1 {
+				return strings.Trim(line[idx+len(vf.prefix):], `"`), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("unable to detect OS version")
 }

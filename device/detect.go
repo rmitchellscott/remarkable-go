@@ -1,9 +1,13 @@
 package device
 
 import (
+	"context"
+	"fmt"
 	"strings"
 
+	"github.com/rmitchellscott/remarkable-go/executor"
 	"github.com/rmitchellscott/remarkable-go/filesystem"
+	"github.com/rmitchellscott/remarkable-go/version"
 )
 
 func Detect(fs filesystem.FS) (Type, error) {
@@ -32,4 +36,29 @@ func Detect(fs filesystem.FS) (Type, error) {
 	}
 
 	return Unknown, nil
+}
+
+func DetectVersion(fs filesystem.FS) (string, error) {
+	return version.ReadFromFS(fs, "")
+}
+
+func DetectArchitecture(exec executor.Executor) (Architecture, error) {
+	result, err := exec.Run(context.Background(), "uname", "-m")
+	if err != nil {
+		return "", err
+	}
+	if !result.Success() {
+		return "", fmt.Errorf("uname -m failed: %s", result.Stderr)
+	}
+
+	machine := strings.TrimSpace(result.Stdout)
+
+	switch machine {
+	case "aarch64", "arm64":
+		return Aarch64, nil
+	case "armv7l", "armv6l", "arm":
+		return Arm32, nil
+	default:
+		return "", fmt.Errorf("unknown architecture: %s", machine)
+	}
 }
