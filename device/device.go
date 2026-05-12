@@ -29,11 +29,11 @@ func (t Type) DisplayName() string {
 	case RM2:
 		return "reMarkable 2"
 	case RMPP:
-		return "reMarkable Paper Pro"
+		return "Paper Pro"
 	case RMPPMove:
-		return "reMarkable Paper Pro Move"
+		return "Paper Pro Move"
 	case RMPPure:
-		return "reMarkable Paper Pure"
+		return "Paper Pure"
 	default:
 		return string(t)
 	}

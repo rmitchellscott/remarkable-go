@@ -27,9 +27,9 @@ func TestType_DisplayName(t *testing.T) {
 	}{
 		{RM1, "reMarkable 1"},
 		{RM2, "reMarkable 2"},
-		{RMPP, "reMarkable Paper Pro"},
-		{RMPPMove, "reMarkable Paper Pro Move"},
-		{RMPPure, "reMarkable Paper Pure"},
+		{RMPP, "Paper Pro"},
+		{RMPPMove, "Paper Pro Move"},
+		{RMPPure, "Paper Pure"},
 		{Unknown, "unknown"},
 	}
 
