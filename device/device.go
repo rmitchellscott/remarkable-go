@@ -39,6 +39,23 @@ func (t Type) DisplayName() string {
 	}
 }
 
+func (t Type) CodeName() string {
+	switch t {
+	case RM1:
+		return "rm1"
+	case RM2:
+		return "rm2"
+	case RMPP:
+		return "ferrari"
+	case RMPPMove:
+		return "chiappa"
+	case RMPPure:
+		return "tatsu"
+	default:
+		return string(t)
+	}
+}
+
 func (t Type) String() string {
 	return string(t)
 }

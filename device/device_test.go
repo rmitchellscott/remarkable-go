@@ -42,6 +42,28 @@ func TestType_DisplayName(t *testing.T) {
 	}
 }
 
+func TestType_CodeName(t *testing.T) {
+	tests := []struct {
+		device Type
+		want   string
+	}{
+		{RM1, "rm1"},
+		{RM2, "rm2"},
+		{RMPP, "ferrari"},
+		{RMPPMove, "chiappa"},
+		{RMPPure, "tatsu"},
+		{Unknown, "unknown"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.device), func(t *testing.T) {
+			if got := tt.device.CodeName(); got != tt.want {
+				t.Errorf("CodeName() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestTypeFromModel(t *testing.T) {
 	tests := []struct {
 		model string
