@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/rmitchellscott/remarkable-go/device"
 	"github.com/rmitchellscott/remarkable-go/executor"
@@ -20,6 +21,8 @@ var (
 	ErrDeviceNotSupported = errors.New("device type not supported")
 	ErrVersionDetection   = errors.New("failed to detect OS version")
 )
+
+var mountMu sync.Mutex
 
 type Info struct {
 	Number     int    `json:"number"`
@@ -388,6 +391,9 @@ func (m *manager) getVersionFromMountedPartition(ctx context.Context, partNum in
 
 	baseDev := regexp.MustCompile(`p\d+$`).ReplaceAllString(strings.TrimSpace(result.Stdout), "")
 	mountPoint := fmt.Sprintf("/tmp/mount_p%d", partNum)
+
+	mountMu.Lock()
+	defer mountMu.Unlock()
 
 	if err := m.fs.MkdirAll(mountPoint, 0755); err != nil {
 		return "", err
