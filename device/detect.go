@@ -11,7 +11,7 @@ import (
 )
 
 func Detect(fs filesystem.FS) (Type, error) {
-	data, err := fs.ReadFile("/proc/device-tree/model")
+	data, err := fs.ReadFile("/sys/devices/soc0/machine")
 	if err != nil {
 		return Unknown, err
 	}
