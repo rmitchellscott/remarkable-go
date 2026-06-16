@@ -14,13 +14,17 @@ import (
 
 const sbinPath = "/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin"
 
+// SSH is an Executor that runs commands on a device over an SSH connection.
 type SSH struct {
 	client *ssh.Client
 	logger *slog.Logger
 }
 
+// Option configures an SSH executor.
 type Option func(*SSH)
 
+// WithLogger logs each command, its exit code, and stderr at slog Debug level.
+// By default an SSH executor logs nothing.
 func WithLogger(logger *slog.Logger) Option {
 	return func(e *SSH) {
 		if logger != nil {
@@ -29,6 +33,7 @@ func WithLogger(logger *slog.Logger) Option {
 	}
 }
 
+// NewSSH returns an Executor that runs commands over the given SSH client.
 func NewSSH(client *ssh.Client, opts ...Option) *SSH {
 	e := &SSH{client: client, logger: slog.New(slog.DiscardHandler)}
 	for _, opt := range opts {
@@ -37,6 +42,10 @@ func NewSSH(client *ssh.Client, opts ...Option) *SSH {
 	return e
 }
 
+// Run executes cmd (with args) in a new session under a PATH that includes the
+// standard sbin directories. Per the Executor contract, a non-zero exit is
+// returned via Result.ExitCode with a nil error; a non-nil error means the
+// command could not be run or ctx was cancelled.
 func (e *SSH) Run(ctx context.Context, cmd string, args ...string) (*Result, error) {
 	session, err := e.client.NewSession()
 	if err != nil {
@@ -86,10 +95,12 @@ func (e *SSH) Run(ctx context.Context, cmd string, args ...string) (*Result, err
 	return result, nil
 }
 
+// RunShell runs script via sh -c.
 func (e *SSH) RunShell(ctx context.Context, script string) (*Result, error) {
 	return e.Run(ctx, "sh", "-c", script)
 }
 
+// RunStreaming runs cmd (with args) and streams stdout and stderr to the given writers.
 func (e *SSH) RunStreaming(ctx context.Context, cmd string, stdout, stderr io.Writer, args ...string) error {
 	session, err := e.client.NewSession()
 	if err != nil {

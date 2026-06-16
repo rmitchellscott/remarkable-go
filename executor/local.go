@@ -7,6 +7,7 @@ import (
 	"os/exec"
 )
 
+// Local is an Executor that runs commands on the host machine.
 type Local struct{}
 
 func NewLocal() *Local {

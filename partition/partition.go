@@ -1,3 +1,4 @@
+// Package partition reads and switches the A/B boot partitions on reMarkable devices.
 package partition
 
 import (
@@ -15,6 +16,7 @@ import (
 	"github.com/rmitchellscott/remarkable-go/version"
 )
 
+// Errors returned by Manager operations.
 var (
 	ErrEncryptionBlocked  = errors.New("cannot switch to pre-3.18 firmware with encryption enabled")
 	ErrInvalidPartition   = errors.New("invalid partition number (must be 2 or 3)")
@@ -24,6 +26,7 @@ var (
 
 var mountMu sync.Mutex
 
+// Info describes one partition slot.
 type Info struct {
 	Number     int    `json:"number"`
 	Version    string `json:"version"`
@@ -32,6 +35,7 @@ type Info struct {
 	IsNextBoot bool   `json:"isNextBoot"`
 }
 
+// SystemInfo describes both partition slots and the device's overall boot state.
 type SystemInfo struct {
 	Active        Info        `json:"active"`
 	Fallback      Info        `json:"fallback"`
@@ -40,6 +44,7 @@ type SystemInfo struct {
 	UpdatePending bool        `json:"updatePending"`
 }
 
+// SwitchResult describes the outcome of a boot-partition switch.
 type SwitchResult struct {
 	Success      bool   `json:"success"`
 	Method       string `json:"method"`
@@ -48,22 +53,35 @@ type SwitchResult struct {
 	Message      string `json:"message"`
 }
 
+// Manager inspects and controls a device's A/B boot partitions.
 type Manager interface {
+	// GetSystemInfo returns the active and fallback slots and boot state. A slot
+	// whose version can't be read is reported with version "unknown" rather than
+	// failing the call.
 	GetSystemInfo(ctx context.Context) (*SystemInfo, error)
+	// SwitchBoot sets partition (2 or 3) as the next boot target.
 	SwitchBoot(ctx context.Context, partition int) (*SwitchResult, error)
+	// GetPartitionVersion returns the OS version of the running system.
 	GetPartitionVersion(ctx context.Context, partition int) (string, error)
+	// IsEncryptionEnabled reports whether the device uses encrypted data partitions.
 	IsEncryptionEnabled(ctx context.Context) (bool, error)
+	// CanSwitchTo returns nil if switching to targetPartition is allowed, or an
+	// error describing why it is not.
 	CanSwitchTo(info *SystemInfo, targetPartition int) error
+	// Reboot reboots the device.
 	Reboot(ctx context.Context) error
 }
 
 type manager struct {
-	exec       executor.Executor
-	fs         filesystem.FS
+	exec        executor.Executor
+	fs          filesystem.FS
 	mountableFS filesystem.MountableFS
-	deviceType device.Type
+	deviceType  device.Type
 }
 
+// NewManager returns a Manager for the given device type, using exec for
+// commands and fs for file access. If fs also implements filesystem.MountableFS,
+// the fallback partition's version is read by mounting it.
 func NewManager(exec executor.Executor, fs filesystem.FS, deviceType device.Type) Manager {
 	var mountableFS filesystem.MountableFS
 	if mfs, ok := fs.(filesystem.MountableFS); ok {
@@ -71,10 +89,10 @@ func NewManager(exec executor.Executor, fs filesystem.FS, deviceType device.Type
 	}
 
 	return &manager{
-		exec:       exec,
-		fs:         fs,
+		exec:        exec,
+		fs:          fs,
 		mountableFS: mountableFS,
-		deviceType: deviceType,
+		deviceType:  deviceType,
 	}
 }
 

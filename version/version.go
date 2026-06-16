@@ -1,3 +1,4 @@
+// Package version compares reMarkable OS version strings and reads them from a device.
 package version
 
 import (
@@ -9,8 +10,10 @@ import (
 	"github.com/rmitchellscott/remarkable-go/filesystem"
 )
 
+// Version is a dotted reMarkable OS version string, e.g. "3.11.2.5".
 type Version string
 
+// Notable version thresholds.
 const (
 	V3_18 Version = "3.18"
 	V3_22 Version = "3.22"
@@ -20,6 +23,7 @@ func (v Version) String() string {
 	return string(v)
 }
 
+// Compare reports whether v is less than (-1), equal to (0), or greater than (1) other.
 func (v Version) Compare(other Version) int {
 	return Compare(string(v), string(other))
 }
@@ -32,6 +36,8 @@ func (v Version) GreaterOrEqual(other Version) bool {
 	return v.Compare(other) >= 0
 }
 
+// Compare numerically compares two dotted version strings, returning -1, 0, or 1.
+// Missing trailing components are treated as zero, so "3.11" equals "3.11.0.0".
 func Compare(v1, v2 string) int {
 	parts1 := strings.Split(v1, ".")
 	parts2 := strings.Split(v2, ".")
@@ -71,6 +77,8 @@ var versionFiles = []struct {
 	{"/etc/os-release", "IMG_VERSION="},
 }
 
+// ReadFromFS reads the OS version from the standard release files under root
+// (pass "" for the live root). It returns an error if no version file is found.
 func ReadFromFS(fs filesystem.FS, root string) (string, error) {
 	for _, vf := range versionFiles {
 		data, err := fs.ReadFile(root + vf.path)

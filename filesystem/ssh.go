@@ -10,11 +10,14 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+// SSH is an FS backed by SFTP over an SSH connection. Mount, Unmount, and
+// IsMounted run shell commands on the device.
 type SSH struct {
 	client     *ssh.Client
 	sftpClient *sftp.Client
 }
 
+// NewSSH opens an SFTP session on client. The caller must Close the returned SSH.
 func NewSSH(client *ssh.Client) (*SSH, error) {
 	sftpClient, err := sftp.NewClient(client)
 	if err != nil {

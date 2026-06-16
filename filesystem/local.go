@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+// Local is an FS backed by the host filesystem.
 type Local struct{}
 
 func NewLocal() *Local {

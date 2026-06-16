@@ -10,6 +10,9 @@ import (
 	"github.com/rmitchellscott/remarkable-go/version"
 )
 
+// Detect identifies the device model from /sys/devices/soc0/machine. It returns
+// Unknown with a nil error when the model is unrecognized, and a non-nil error
+// only when the model file cannot be read.
 func Detect(fs filesystem.FS) (Type, error) {
 	data, err := fs.ReadFile("/sys/devices/soc0/machine")
 	if err != nil {
@@ -38,10 +41,12 @@ func Detect(fs filesystem.FS) (Type, error) {
 	return Unknown, nil
 }
 
+// DetectVersion returns the running OS version read from the device's release files.
 func DetectVersion(fs filesystem.FS) (string, error) {
 	return version.ReadFromFS(fs, "")
 }
 
+// DetectArchitecture returns the device CPU architecture via uname -m.
 func DetectArchitecture(exec executor.Executor) (Architecture, error) {
 	result, err := exec.Run(context.Background(), "uname", "-m")
 	if err != nil {

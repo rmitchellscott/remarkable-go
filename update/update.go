@@ -1,3 +1,4 @@
+// Package update installs OS images on a reMarkable device via swupdate.
 package update
 
 import (
@@ -9,12 +10,15 @@ import (
 	"github.com/rmitchellscott/remarkable-go/executor"
 )
 
+// InstallResult describes the outcome of an OS image installation.
 type InstallResult struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
 }
 
+// Manager installs OS update images.
 type Manager interface {
+	// Install applies the .swu image at swuPath, writing swupdate's output to output.
 	Install(ctx context.Context, swuPath string, output io.Writer) (*InstallResult, error)
 }
 
@@ -22,6 +26,8 @@ type manager struct {
 	exec executor.Executor
 }
 
+// NewManager returns an update Manager using exec. If exec implements
+// executor.StreamingExecutor, install output is streamed to the writer as it is produced.
 func NewManager(exec executor.Executor) Manager {
 	return &manager{exec: exec}
 }

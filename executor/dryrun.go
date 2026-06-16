@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+// DryRun is an Executor that records commands without running them, returning
+// canned responses. It is intended for tests.
 type DryRun struct {
 	responses map[string]*Result
 	log       []string
@@ -18,10 +20,12 @@ func NewDryRun() *DryRun {
 	}
 }
 
+// SetResponse registers the Result to return for commands beginning with cmdPrefix.
 func (e *DryRun) SetResponse(cmdPrefix string, result *Result) {
 	e.responses[cmdPrefix] = result
 }
 
+// Log returns the commands that have been run, in order.
 func (e *DryRun) Log() []string {
 	return e.log
 }

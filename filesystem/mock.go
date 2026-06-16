@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// Mock is an in-memory FS for tests.
 type Mock struct {
 	files   map[string][]byte
 	mounts  map[string]string
@@ -96,6 +97,8 @@ func (f *Mock) IsMounted(target string) (bool, error) {
 	return ok, nil
 }
 
+// SimulateMountedPartition seeds the mock so that mounting partition partNum
+// exposes a release file reporting the given version.
 func (f *Mock) SimulateMountedPartition(partNum int, version string) {
 	mountPoint := fmt.Sprintf("/tmp/mount_p%d", partNum)
 	f.mounts[mountPoint] = fmt.Sprintf("/dev/mmcblk0p%d", partNum)
