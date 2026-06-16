@@ -213,6 +213,9 @@ func (m *manager) getRM12PartitionInfo(ctx context.Context) (running, other, boo
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to get root device: %w", err)
 	}
+	if !result.Success() {
+		return 0, 0, 0, fmt.Errorf("rootdev failed (exit %d): %s", result.ExitCode, strings.TrimSpace(result.Stderr))
+	}
 
 	running, err = parsePartitionNumber(strings.TrimSpace(result.Stdout))
 	if err != nil {
@@ -242,6 +245,9 @@ func (m *manager) getPaperProPartitionInfo(ctx context.Context) (running, other,
 	result, err := m.exec.Run(ctx, "swupdate", "-g")
 	if err != nil {
 		return 0, 0, 0, fmt.Errorf("failed to get active partition: %w", err)
+	}
+	if !result.Success() {
+		return 0, 0, 0, fmt.Errorf("swupdate -g failed (exit %d): %s", result.ExitCode, strings.TrimSpace(result.Stderr))
 	}
 
 	running, err = parsePartitionNumber(strings.TrimSpace(result.Stdout))

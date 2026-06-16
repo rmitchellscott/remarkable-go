@@ -5,17 +5,36 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
 
+const sbinPath = "/usr/local/sbin:/usr/sbin:/sbin:/usr/local/bin:/usr/bin:/bin"
+
 type SSH struct {
 	client *ssh.Client
+	logger *slog.Logger
 }
 
-func NewSSH(client *ssh.Client) *SSH {
-	return &SSH{client: client}
+type Option func(*SSH)
+
+func WithLogger(logger *slog.Logger) Option {
+	return func(e *SSH) {
+		if logger != nil {
+			e.logger = logger
+		}
+	}
+}
+
+func NewSSH(client *ssh.Client, opts ...Option) *SSH {
+	e := &SSH{client: client, logger: slog.New(slog.DiscardHandler)}
+	for _, opt := range opts {
+		opt(e)
+	}
+	return e
 }
 
 func (e *SSH) Run(ctx context.Context, cmd string, args ...string) (*Result, error) {
@@ -34,12 +53,15 @@ func (e *SSH) Run(ctx context.Context, cmd string, args ...string) (*Result, err
 	session.Stdout = &stdout
 	session.Stderr = &stderr
 
-	fullCmd := cmd
+	displayCmd := cmd
 	if len(args) > 0 {
-		fullCmd = cmd + " " + shellJoin(args)
+		displayCmd = cmd + " " + shellJoin(args)
 	}
+	fullCmd := "PATH=" + sbinPath + ":$PATH " + displayCmd
 
+	start := time.Now()
 	err = session.Run(fullCmd)
+	dur := time.Since(start)
 
 	result := &Result{
 		Stdout: stdout.String(),
@@ -49,14 +71,18 @@ func (e *SSH) Run(ctx context.Context, cmd string, args ...string) (*Result, err
 	if err != nil {
 		if exitErr, ok := err.(*ssh.ExitError); ok {
 			result.ExitCode = exitErr.ExitStatus()
+			e.logger.Debug("exec", "cmd", displayCmd, "exit", result.ExitCode, "stderr", strings.TrimSpace(result.Stderr), "dur", dur)
 			return result, nil
 		}
 		if ctx.Err() != nil {
+			e.logger.Debug("exec cancelled", "cmd", displayCmd, "err", ctx.Err())
 			return nil, ctx.Err()
 		}
+		e.logger.Debug("exec failed", "cmd", displayCmd, "err", err)
 		return nil, err
 	}
 
+	e.logger.Debug("exec", "cmd", displayCmd, "exit", 0, "dur", dur)
 	return result, nil
 }
 
@@ -79,14 +105,19 @@ func (e *SSH) RunStreaming(ctx context.Context, cmd string, stdout, stderr io.Wr
 	session.Stdout = stdout
 	session.Stderr = stderr
 
-	fullCmd := cmd
+	displayCmd := cmd
 	if len(args) > 0 {
-		fullCmd = cmd + " " + shellJoin(args)
+		displayCmd = cmd + " " + shellJoin(args)
 	}
+	fullCmd := "PATH=" + sbinPath + ":$PATH " + displayCmd
 
+	e.logger.Debug("exec stream", "cmd", displayCmd)
 	err = session.Run(fullCmd)
 	if err != nil && ctx.Err() != nil {
 		return ctx.Err()
+	}
+	if err != nil {
+		e.logger.Debug("exec stream failed", "cmd", displayCmd, "err", err)
 	}
 	return err
 }
