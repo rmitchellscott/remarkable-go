@@ -22,7 +22,24 @@ var (
 	ErrInvalidPartition   = errors.New("invalid partition number (must be 2 or 3)")
 	ErrDeviceNotSupported = errors.New("device type not supported")
 	ErrVersionDetection   = errors.New("failed to detect OS version")
+	// ErrSlotUnhealthy means the target slot is positively bad (must not be booted).
+	ErrSlotUnhealthy = errors.New("target partition failed integrity check")
+	// ErrSlotCheckUnavailable means the health check could not be run.
+	ErrSlotCheckUnavailable = errors.New("could not verify target partition health")
 )
+
+// SwitchOption configures a SwitchBoot call.
+type SwitchOption func(*switchConfig)
+
+type switchConfig struct {
+	force bool
+}
+
+// WithForce skips the target-slot health check (use only for recovery to a
+// slot known to be good).
+func WithForce() SwitchOption {
+	return func(c *switchConfig) { c.force = true }
+}
 
 var mountMu sync.Mutex
 
@@ -59,8 +76,18 @@ type Manager interface {
 	// whose version can't be read is reported with version "unknown" rather than
 	// failing the call.
 	GetSystemInfo(ctx context.Context) (*SystemInfo, error)
-	// SwitchBoot sets partition (2 or 3) as the next boot target.
-	SwitchBoot(ctx context.Context, partition int) (*SwitchResult, error)
+	// SwitchBoot sets partition (2 or 3) as the next boot target. Unless
+	// WithForce is passed, switching to the non-running slot first verifies it
+	// with VerifySlotHealth and refuses if the slot is unhealthy.
+	SwitchBoot(ctx context.Context, partition int, opts ...SwitchOption) (*SwitchResult, error)
+	// VerifySlotHealth checks that partition (2 or 3) holds a healthy, complete
+	// OS. Returns nil if healthy, ErrSlotUnhealthy if positively bad, or
+	// ErrSlotCheckUnavailable if the check could not be run.
+	VerifySlotHealth(ctx context.Context, partition int) error
+	// IsUpdateInProgress reports whether an OS install is actively writing the
+	// inactive slot, regardless of which updater is doing it. It reads only
+	// device state, so it stays correct across a controller restart.
+	IsUpdateInProgress(ctx context.Context) (bool, error)
 	// GetPartitionVersion returns the OS version of the running system.
 	GetPartitionVersion(ctx context.Context, partition int) (string, error)
 	// IsEncryptionEnabled reports whether the device uses encrypted data partitions.
@@ -149,9 +176,14 @@ func (m *manager) GetSystemInfo(ctx context.Context) (*SystemInfo, error) {
 	}, nil
 }
 
-func (m *manager) SwitchBoot(ctx context.Context, partition int) (*SwitchResult, error) {
+func (m *manager) SwitchBoot(ctx context.Context, partition int, opts ...SwitchOption) (*SwitchResult, error) {
 	if partition != 2 && partition != 3 {
 		return nil, ErrInvalidPartition
+	}
+
+	var cfg switchConfig
+	for _, o := range opts {
+		o(&cfg)
 	}
 
 	info, err := m.GetSystemInfo(ctx)
@@ -161,6 +193,14 @@ func (m *manager) SwitchBoot(ctx context.Context, partition int) (*SwitchResult,
 
 	if err := m.CanSwitchTo(info, partition); err != nil {
 		return nil, err
+	}
+
+	// Verify the target before switching to it. The running slot is always safe,
+	// so only the non-running slot is checked; WithForce bypasses for recovery.
+	if !cfg.force && partition != info.Active.Number {
+		if err := m.VerifySlotHealth(ctx, partition); err != nil {
+			return nil, err
+		}
 	}
 
 	currentBoot := info.Active.Number
@@ -224,6 +264,109 @@ func (m *manager) CanSwitchTo(info *SystemInfo, targetPartition int) error {
 func (m *manager) Reboot(ctx context.Context) error {
 	_, err := m.exec.Run(ctx, "reboot")
 	return err
+}
+
+func (m *manager) VerifySlotHealth(ctx context.Context, partition int) error {
+	if partition != 2 && partition != 3 {
+		return ErrInvalidPartition
+	}
+
+	base, err := m.rootBaseDevice(ctx)
+	if err != nil {
+		return fmt.Errorf("%w: could not determine slot device: %v", ErrSlotCheckUnavailable, err)
+	}
+	dev := fmt.Sprintf("%sp%d", base, partition)
+
+	if err := m.fsckSlot(ctx, dev); err != nil {
+		return err
+	}
+	return m.verifySlotContents(partition, dev)
+}
+
+func (m *manager) IsUpdateInProgress(ctx context.Context) (bool, error) {
+	res, err := m.exec.Run(ctx, "rootdev")
+	if err != nil {
+		return false, err
+	}
+	if !res.Success() {
+		return false, fmt.Errorf("rootdev failed (exit %d)", res.ExitCode)
+	}
+	running, err := parsePartitionNumber(strings.TrimSpace(res.Stdout))
+	if err != nil {
+		return false, err
+	}
+	other := 3
+	if running == 3 {
+		other = 2
+	}
+	base := regexp.MustCompile(`p\d+$`).ReplaceAllString(strings.TrimSpace(res.Stdout), "")
+	// fuser exits 0 if a process holds the device open, 1 if none.
+	fres, err := m.exec.Run(ctx, "fuser", fmt.Sprintf("%sp%d", base, other))
+	if err != nil {
+		return false, err
+	}
+	return fres.Success(), nil
+}
+
+func (m *manager) rootBaseDevice(ctx context.Context) (string, error) {
+	result, err := m.exec.Run(ctx, "rootdev")
+	if err != nil {
+		return "", err
+	}
+	if !result.Success() {
+		return "", fmt.Errorf("rootdev failed (exit %d): %s", result.ExitCode, strings.TrimSpace(result.Stderr))
+	}
+	return regexp.MustCompile(`p\d+$`).ReplaceAllString(strings.TrimSpace(result.Stdout), ""), nil
+}
+
+// fsckSlot runs a read-only forced check. e2fsck exit is a bitmask: 0 = clean;
+// bits 1/4 = errors; 127 = missing; other = operational failure.
+func (m *manager) fsckSlot(ctx context.Context, dev string) error {
+	res, err := m.exec.Run(ctx, "e2fsck", "-fn", dev)
+	if err != nil {
+		return fmt.Errorf("%w: e2fsck could not run on %s: %v", ErrSlotCheckUnavailable, dev, err)
+	}
+	switch {
+	case res.ExitCode == 0:
+		return nil
+	case res.ExitCode == 127:
+		return fmt.Errorf("%w: e2fsck not available on device", ErrSlotCheckUnavailable)
+	case res.ExitCode&4 != 0 || res.ExitCode&1 != 0:
+		return fmt.Errorf("%w: %s has filesystem errors (e2fsck exit %d)", ErrSlotUnhealthy, dev, res.ExitCode)
+	default:
+		return fmt.Errorf("%w: e2fsck on %s exited %d: %s", ErrSlotCheckUnavailable, dev, res.ExitCode, strings.TrimSpace(res.Stderr))
+	}
+}
+
+// verifySlotContents RO-mounts the slot and confirms it holds a readable OS
+// version, distinguishing an installed rootfs from a clean-but-empty filesystem.
+func (m *manager) verifySlotContents(partition int, dev string) error {
+	if m.mountableFS == nil {
+		return nil // cannot mount; fsck already validated structure
+	}
+
+	mountPoint := fmt.Sprintf("/tmp/mount_health_p%d", partition)
+
+	mountMu.Lock()
+	defer mountMu.Unlock()
+
+	if err := m.fs.MkdirAll(mountPoint, 0755); err != nil {
+		return fmt.Errorf("%w: %v", ErrSlotCheckUnavailable, err)
+	}
+	defer func() {
+		m.mountableFS.Unmount(mountPoint)
+		m.fs.RemoveAll(mountPoint)
+	}()
+
+	if err := m.mountableFS.Mount(dev, mountPoint, true); err != nil {
+		// fsck passed but the slot won't mount — treat as bad rather than just unverifiable.
+		return fmt.Errorf("%w: cannot mount %s: %v", ErrSlotUnhealthy, dev, err)
+	}
+
+	if v, err := version.ReadFromFS(m.fs, mountPoint); err != nil || strings.TrimSpace(v) == "" {
+		return fmt.Errorf("%w: OS version unreadable on %s", ErrSlotUnhealthy, dev)
+	}
+	return nil
 }
 
 func (m *manager) getRM12PartitionInfo(ctx context.Context) (running, other, boot int, err error) {

@@ -2,12 +2,21 @@ package partition
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/rmitchellscott/remarkable-go/device"
 	"github.com/rmitchellscott/remarkable-go/executor"
 	"github.com/rmitchellscott/remarkable-go/filesystem"
 )
+
+// seedHealthySlot makes VerifySlotHealth's content check pass for partNum by
+// seeding the files it reads at the read-only health mount point.
+func seedHealthySlot(fs *filesystem.Mock, partNum int, version string) {
+	base := fmt.Sprintf("/tmp/mount_health_p%d", partNum)
+	fs.SetFileString(base+"/usr/share/remarkable/update.conf", "RELEASE_VERSION="+version+"\n")
+}
 
 func TestManager_GetSystemInfo_RM2(t *testing.T) {
 	exec := executor.NewDryRun()
@@ -131,6 +140,7 @@ func TestManager_SwitchBoot_RM2(t *testing.T) {
 	fs := filesystem.NewMock()
 	fs.SetFileString("/usr/share/remarkable/update.conf", "RELEASE_VERSION=3.20.0.92\n")
 	fs.SetFileString("/proc/mounts", "")
+	seedHealthySlot(fs, 2, "3.20.0.92")
 
 	mgr := NewManager(exec, fs, device.RM2)
 	result, err := mgr.SwitchBoot(context.Background(), 2)
@@ -174,6 +184,128 @@ func TestManager_SwitchBoot_InvalidPartition(t *testing.T) {
 	_, err = mgr.SwitchBoot(context.Background(), 4)
 	if err != ErrInvalidPartition {
 		t.Errorf("Expected ErrInvalidPartition, got %v", err)
+	}
+}
+
+func newSwitchEnv() (*executor.DryRun, *filesystem.Mock) {
+	exec := executor.NewDryRun()
+	exec.SetResponse("rootdev", &executor.Result{ExitCode: 0, Stdout: "/dev/mmcblk0p3"})
+	exec.SetResponse("fw_printenv", &executor.Result{ExitCode: 0, Stdout: "active_partition=3"})
+	fs := filesystem.NewMock()
+	fs.SetFileString("/usr/share/remarkable/update.conf", "RELEASE_VERSION=3.20.0.92\n")
+	fs.SetFileString("/proc/mounts", "")
+	return exec, fs
+}
+
+func TestManager_VerifySlotHealth(t *testing.T) {
+	tests := []struct {
+		name      string
+		e2fsck    int
+		seed      bool
+		wantErr   error
+		wantClean bool
+	}{
+		{name: "clean", e2fsck: 0, seed: true, wantClean: true},
+		{name: "fs errors", e2fsck: 4, seed: true, wantErr: ErrSlotUnhealthy},
+		{name: "fs errors bit 1", e2fsck: 5, seed: true, wantErr: ErrSlotUnhealthy},
+		{name: "e2fsck missing", e2fsck: 127, seed: true, wantErr: ErrSlotCheckUnavailable},
+		{name: "operational error", e2fsck: 8, seed: true, wantErr: ErrSlotCheckUnavailable},
+		{name: "clean fs but incomplete OS", e2fsck: 0, seed: false, wantErr: ErrSlotUnhealthy},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exec, fs := newSwitchEnv()
+			exec.SetResponse("e2fsck", &executor.Result{ExitCode: tt.e2fsck})
+			if tt.seed {
+				seedHealthySlot(fs, 2, "3.20.0.92")
+			}
+			mgr := NewManager(exec, fs, device.RM2)
+			err := mgr.VerifySlotHealth(context.Background(), 2)
+			if tt.wantClean {
+				if err != nil {
+					t.Fatalf("expected healthy, got %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("got %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestManager_IsUpdateInProgress(t *testing.T) {
+	tests := []struct {
+		name      string
+		fuserExit int
+		want      bool
+	}{
+		{name: "writing inactive slot", fuserExit: 0, want: true},
+		{name: "idle", fuserExit: 1, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			exec := executor.NewDryRun()
+			exec.SetResponse("rootdev", &executor.Result{ExitCode: 0, Stdout: "/dev/mmcblk0p3"})
+			exec.SetResponse("fuser /dev/mmcblk0p2", &executor.Result{ExitCode: tt.fuserExit})
+			mgr := NewManager(exec, filesystem.NewMock(), device.RM2)
+			got, err := mgr.IsUpdateInProgress(context.Background())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("IsUpdateInProgress = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func switchedLog(log []string) bool {
+	for _, e := range log {
+		if e == "[DRY RUN] fw_setenv active_partition 2" {
+			return true
+		}
+	}
+	return false
+}
+
+func TestManager_SwitchBoot_BlockedWhenUnhealthy(t *testing.T) {
+	exec, fs := newSwitchEnv()
+	exec.SetResponse("e2fsck", &executor.Result{ExitCode: 4})
+	seedHealthySlot(fs, 2, "3.20.0.92")
+
+	mgr := NewManager(exec, fs, device.RM2)
+	_, err := mgr.SwitchBoot(context.Background(), 2)
+	if !errors.Is(err, ErrSlotUnhealthy) {
+		t.Fatalf("expected ErrSlotUnhealthy, got %v", err)
+	}
+	if switchedLog(exec.Log()) {
+		t.Error("must not fw_setenv when the target slot is unhealthy")
+	}
+}
+
+func TestManager_SwitchBoot_ForceSkipsCheck(t *testing.T) {
+	exec, fs := newSwitchEnv()
+	exec.SetResponse("e2fsck", &executor.Result{ExitCode: 4}) // unhealthy, but forced
+
+	mgr := NewManager(exec, fs, device.RM2)
+	_, err := mgr.SwitchBoot(context.Background(), 2, WithForce())
+	if err != nil {
+		t.Fatalf("WithForce should bypass the health check: %v", err)
+	}
+	if !switchedLog(exec.Log()) {
+		t.Error("forced switch should fw_setenv")
+	}
+}
+
+func TestManager_SwitchBoot_ToActiveSlotSkipsCheck(t *testing.T) {
+	exec, fs := newSwitchEnv()
+	exec.SetResponse("e2fsck", &executor.Result{ExitCode: 4}) // would fail if checked
+
+	mgr := NewManager(exec, fs, device.RM2)
+	// active is slot 3; switching to 3 is always safe and must not run the check.
+	if _, err := mgr.SwitchBoot(context.Background(), 3); err != nil {
+		t.Fatalf("switching to the active slot should not be gated: %v", err)
 	}
 }
 
